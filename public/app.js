@@ -8,7 +8,8 @@ const UNIVERSE = [
   'MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'META', 'JPM', 'V',
   'SWDA.MI', 'CSSPX.MI', 'EIMI.MI', 'XDWT.DE'
 ];
-const REFRESH_MS = 5 * 60 * 1000;
+const REFRESH_MS = 5 * 60 * 1000; // storico completo e suggerimenti
+const LIVE_MS = 10 * 1000;         // prezzi in tempo reale
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -200,7 +201,7 @@ function renderHeader() {
   const s = rangeSlice(S.series);
   const per = s.length >= 2 ? (s.at(-1).v - s.at(-1).b) - (s[0].v - s[0].b) : 0;
   $('#kPeriod').innerHTML = `<span class="${cls(per)}">${sEur(per)}</span>`;
-  $('#updated').textContent = S.updated ? `Aggiornato alle ${new Date(S.updated).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : '';
+  $('#updated').textContent = S.updated ? `● Live · aggiornato alle ${new Date(S.updated).toLocaleTimeString('it-IT')} (ogni 10 s)` : '';
   document.title = S.series.length ? `${eur(T.value, 0)} ${T.day >= 0 ? '▲' : '▼'} ${pct(T.dayPct)} · Portafoglio` : 'Portafoglio';
 }
 
@@ -329,7 +330,7 @@ function renderMini(root) {
     const plp = h.costEur ? (h.valueEur / h.costEur - 1) * 100 : null;
     return `<div class="mini-row"><b>${esc(h.symbol)}</b><span class="${cls(h.dayPct)}">${pct(h.dayPct)}</span><span class="${cls(plp)}">${pct(plp)}</span></div>`;
   }).join('') : '<div class="muted" style="text-align:center;padding:10px">Nessun titolo</div>';
-  k('time').textContent = S.updated ? `colonne: oggi · totale — agg. ${new Date(S.updated).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : '';
+  k('time').textContent = S.updated ? `colonne: oggi · totale — agg. ${new Date(S.updated).toLocaleTimeString('it-IT')}` : '';
   requestAnimationFrame(() => drawChart(k('chart'), S.series.filter((p) => p.t >= Date.now() - 92 * 864e5), { lineWidth: 1.5, padTop: 2, padBottom: 2 }));
 }
 
@@ -380,6 +381,42 @@ async function loadData() {
   try { const c = JSON.parse(localStorage.getItem('pf_cache') || 'null'); if (c) { S.quotes = c.quotes || {}; S.updated = c.updated; } } catch {}
   renderAll();
   await refresh({ quiet: true });
+}
+
+
+/* ---------- aggiornamento prezzi ogni 10 secondi ---------- */
+async function liveTick() {
+  if (S.loading || S.live) return;
+  if (document.visibilityState !== 'visible' && !S.pip) return;
+  const syms = [...new Set([...Object.values(S.holdings).filter((h) => h.qty > 0).map((h) => h.symbol), ...S.watch.map((w) => w.symbol)])];
+  if (!syms.length) return;
+  S.live = true;
+  try {
+    const r = await fetch(`/api/quote?symbols=${encodeURIComponent(syms.join(','))}&range=5d&live=1`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const { quotes = {} } = await r.json();
+    let changed = false;
+    for (const [sym, q] of Object.entries(quotes)) {
+      for (const base of [S.quotes[sym], S.uni[sym]]) {
+        if (!base || q.price == null) continue;
+        if (base.price !== q.price || base.prevClose !== q.prevClose) changed = true;
+        base.price = q.price;
+        if (q.prevClose != null) base.prevClose = q.prevClose;
+        if (q.fxToEur != null) base.fxToEur = q.fxToEur;
+        base.time = q.time;
+        const h = base.history || [];
+        const last = q.history?.at(-1);
+        if (last) {
+          if (h.length && dayKey(h.at(-1)[0]) === dayKey(last[0])) h[h.length - 1] = [last[0], q.price];
+          else h.push([last[0], q.price]);
+        }
+      }
+    }
+    S.updated = Date.now();
+    if (changed) renderAll();
+    else if (!MINI) renderHeader();
+    else renderMini($('.mini'));
+  } catch {} finally { S.live = false; }
 }
 
 /* ---------- ricerca titoli ---------- */
@@ -511,6 +548,7 @@ async function startApp() {
   $('#importLocalBtn').hidden = !(S.mode === 'cloud' && local.get('pf_tx').length);
   try { await loadData(); } catch (e) { toast(`Errore dati: ${e.message}`, 5000); }
   setInterval(() => document.visibilityState === 'visible' && refresh({ quiet: true }), REFRESH_MS);
+  setInterval(liveTick, LIVE_MS);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - (S.updated || 0) > 120000) refresh({ quiet: true });
   });

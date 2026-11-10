@@ -5,7 +5,7 @@ const HEADERS = {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36',
   Accept: 'application/json'
 };
-const RANGES = new Set(['1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max']);
+const RANGES = new Set(['5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max']);
 
 async function getChart(symbol, range = '1y', interval = '1d') {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
       q.fxToEur = fx[b.cur] != null ? fx[b.cur] / b.div : null;
     }
 
-    res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
+    res.setHeader('Cache-Control', req.query.live ? 'no-store' : 's-maxage=120, stale-while-revalidate=600');
     res.status(200).json({ quotes, errors, fx, updated: Date.now() });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });

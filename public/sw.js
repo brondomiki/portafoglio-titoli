@@ -1,5 +1,5 @@
 // Service worker: app installabile e utilizzabile anche con connessione assente (ultimi dati in cache).
-const CACHE = 'pf-v1';
+const CACHE = 'pf-v2';
 const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/chart.js', '/analysis.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
