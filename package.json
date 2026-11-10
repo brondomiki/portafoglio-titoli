@@ -1,0 +1,7 @@
+{
+  "name": "portafoglio-titoli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tracker di portafoglio titoli: PWA installabile con Supabase e funzioni Vercel"
+}
