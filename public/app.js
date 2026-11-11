@@ -1,13 +1,6 @@
 import { drawChart, sparkline } from './chart.js';
-import { indicators, evaluatePosition, entryPlan } from './analysis.js';
+import { indicators, evaluatePosition, entryPlan, livePlan, UNIVERSE } from './analysis.js';
 
-// Titoli suggeriti da monitorare (diversificati: Italia, Europa, USA, ETF). Modificabile.
-const UNIVERSE = [
-  'ENEL.MI', 'ISP.MI', 'UCG.MI', 'ENI.MI', 'RACE.MI', 'LDO.MI', 'PRY.MI', 'G.MI', 'MONC.MI', 'TRN.MI',
-  'ASML.AS', 'SAP.DE', 'MC.PA', 'SU.PA', 'NOVO-B.CO',
-  'MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'META', 'JPM', 'V',
-  'SWDA.MI', 'CSSPX.MI', 'EIMI.MI', 'XDWT.DE'
-];
 const REFRESH_MS = 5 * 60 * 1000; // storico completo e suggerimenti
 const LIVE_MS = 10 * 1000;         // prezzi in tempo reale
 
@@ -22,7 +15,7 @@ const S = {
   quotes: {}, uni: {}, updated: null,
   range: localStorage.getItem('pf_range') || '6M',
   holdings: {}, series: [],
-  pip: null, loading: false
+  runs: [], pip: null, loading: false
 };
 
 /* ---------- formattazione ---------- */
@@ -198,6 +191,71 @@ function totals() {
   return { value, cost, pl: value - cost, plPct: cost ? (value / cost - 1) * 100 : 0, day, dayPct: prevValue ? (day / prevValue) * 100 : 0, realized };
 }
 
+/* ---------- analisi programmata (mattina e pomeriggio) ---------- */
+const SLOT_LABEL = { mattina: 'del mattino', pomeriggio: 'del pomeriggio', manuale: 'manuale' };
+const snap = (sym) => S.runs[0]?.data?.syms?.[sym] || null;
+const prevSnap = (sym) => S.runs[1]?.data?.syms?.[sym] || null;
+function runInfo() {
+  const r = S.runs[0];
+  if (!r) return '';
+  const d = new Date(r.run_at);
+  const when = d.toDateString() === new Date().toDateString() ? `oggi alle ${d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : d.toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `Analisi ${SLOT_LABEL[r.slot] || ''} · ${when}`;
+}
+function nextRunLabel() {
+  const now = new Date();
+  const rome = (d) => +new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', hourCycle: 'h23' }).format(d);
+  const dow = now.getDay(), h = rome(now);
+  if (dow >= 1 && dow <= 5 && h < 8) return 'prossima stamattina verso le 8:30';
+  if (dow >= 1 && dow <= 5 && h < 15) return 'prossima oggi verso le 15:00';
+  return dow === 5 || dow === 6 ? 'prossima lunedì verso le 8:30' : 'prossima domani verso le 8:30';
+}
+async function loadAnalysis({ notify = false } = {}) {
+  try {
+    const r = await fetch('/api/analysis', { cache: 'no-store' });
+    if (!r.ok) return;
+    const { runs = [] } = await r.json();
+    const changed = runs[0]?.id !== S.runs[0]?.id;
+    S.runs = runs;
+    if (changed) {
+      if (notify && runs[0]) toast(`Nuove valutazioni ${SLOT_LABEL[runs[0].slot] || ''} disponibili`, 4000);
+      if (!MINI) { await loadSuggestionQuotes(); renderAll(); }
+    }
+  } catch {}
+}
+async function runAnalysisNow() {
+  if (S.mode !== 'cloud') return toast("Serve l'accesso con account per aggiornare l'analisi");
+  const { data } = await S.db.auth.getSession();
+  toast('Analisi in corso… (circa 20 secondi)', 20000);
+  const r = await fetch('/api/analysis', { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token}` } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return toast(j.error || 'Analisi non riuscita', 6000);
+  toast(j.skipped ? 'Analisi già aggiornata da pochi minuti' : `Analisi completata: ${j.analyzed} titoli`, 4000);
+  S.runs = [];
+  await loadAnalysis();
+}
+// piano d'ingresso: livelli dell'ultima analisi, stato sul prezzo attuale
+function planFor(sym, q) {
+  const sn = snap(sym);
+  if (sn) return livePlan(entryPlan(sn.ind), q?.price ?? sn.price);
+  return q?.history?.length > 60 ? entryPlan(indicators(q.history, q.price)) : null;
+}
+function suggestedSymbols() {
+  const exclude = new Set([...S.watch.map((w) => w.symbol), ...Object.values(S.holdings).filter((h) => h.qty > 0).map((h) => h.symbol)]);
+  const ranked = S.runs[0]?.data?.ranked;
+  if (ranked) return ranked.filter((x) => !exclude.has(x)).slice(0, 8);
+  return UNIVERSE.filter((x) => !exclude.has(x) && S.uni[x]?.history?.length > 60)
+    .map((x) => ({ x, plan: entryPlan(indicators(S.uni[x].history, S.uni[x].price)) }))
+    .sort((a, b) => b.plan.score - a.plan.score || a.plan.dist - b.plan.dist)
+    .slice(0, 8).map((r) => r.x);
+}
+async function loadSuggestionQuotes() {
+  const want = S.runs[0]?.data?.ranked ? S.runs[0].data.ranked.slice(0, 16) : UNIVERSE;
+  const missing = [...new Set(want.concat(S.watch.map((w) => w.symbol)))].filter((x) => !S.quotes[x] && !S.uni[x]);
+  if (missing.length) Object.assign(S.uni, await fetchQuotes(missing, '1y').catch(() => ({})));
+  for (const x of want) if (S.quotes[x]) S.uni[x] = S.quotes[x];
+}
+
 /* ---------- rendering ---------- */
 function renderHeader() {
   const T = totals();
@@ -255,13 +313,14 @@ function renderHoldings() {
 function renderAdvice() {
   const list = Object.values(S.holdings).filter((h) => h.qty > 0);
   const el = $('#advice');
+  $('#adviceInfo').textContent = S.runs[0] ? `${runInfo()} — ${nextRunLabel()}` : 'Valutazione sui prezzi attuali (analisi programmata non ancora disponibile)';
   if (!list.length) { el.innerHTML = `<div class="empty">Le valutazioni compariranno quando avrai titoli in portafoglio.</div>`; return; }
   el.innerHTML = list.map((h) => {
     const e = h.eval;
     if (!e) return `<div class="adv"><div class="adv-head"><b>${esc(h.symbol)}</b><span class="badge neu">Dati insufficienti</span></div></div>`;
     const proj = e.ind.proj;
     return `<div class="adv">
-      <div class="adv-head"><b>${esc(h.symbol)} <small class="muted">${esc(h.name)}</small></b><span class="badge ${e.tone}">${esc(e.action)}</span></div>
+      <div class="adv-head"><b>${esc(h.symbol)} <small class="muted">${esc(h.name)}</small></b><span>${e.prevAction && e.prevAction !== e.action ? `<small class="muted">prima: ${esc(e.prevAction)} → </small>` : ''}<span class="badge ${e.tone}">${esc(e.action)}</span></span></div>
       <p>${esc(e.detail)}</p>
       ${proj ? `<div class="proj">Tendenza stimata a 1 mese: <b class="${cls(proj.pct)}">${pct(proj.pct)}</b> <span class="muted">(affidabilità ${proj.r2 > 0.6 ? 'alta' : proj.r2 > 0.3 ? 'media' : 'bassa'})</span> · Stop indicativo: <b>${price(e.stop, h.currency)}</b></div>` : ''}
       <ul>${e.reasons.map(([s, r]) => `<li class="${s === '+' ? 'p' : 'm'}">${esc(r)}</li>`).join('')}</ul>
@@ -269,14 +328,14 @@ function renderAdvice() {
   }).join('');
 }
 
-function watchCard(sym, q, plan, mine) {
+function watchCard(sym, q, plan, mine, isNew = false) {
   const day = q.prevClose ? (q.price / q.prevClose - 1) * 100 : null;
   const target = mine?.target_price;
   const hit = target && q.price <= target;
   return `<div class="w ${mine ? 'mine' : ''}">
     ${mine ? `<button class="del x" data-delwatch="${esc(mine.id)}" title="Rimuovi">×</button>` : ''}
     <div class="w-head">
-      <div style="min-width:0"><b>${esc(sym)}</b><div class="nm">${esc(q.name)}</div></div>
+      <div style="min-width:0"><b>${esc(sym)}</b>${isNew ? ' <span class="badge pos">Nuovo</span>' : ''}<div class="nm">${esc(q.name)}</div></div>
       <div style="text-align:right;${mine ? 'margin-right:22px' : ''}"><b class="num">${price(q.price, q.currency)}</b><br><small class="${cls(day)}">${pct(day)}</small></div>
     </div>
     <canvas data-wspark="${esc(sym)}"></canvas>
@@ -302,19 +361,20 @@ function renderWatch() {
   for (const w of S.watch) {
     const q = S.uni[w.symbol] || S.quotes[w.symbol];
     if (!q?.history?.length) { cards.push(`<div class="w mine"><button class="del x" data-delwatch="${esc(w.id)}">×</button><b>${esc(w.symbol)}</b><span class="muted">Caricamento dati…</span></div>`); continue; }
-    cards.push(watchCard(w.symbol, q, entryPlan(indicators(q.history, q.price)), w));
+    const plan = planFor(w.symbol, q);
+    if (plan) cards.push(watchCard(w.symbol, q, plan, w));
   }
-  const exclude = new Set([...S.watch.map((w) => w.symbol), ...Object.values(S.holdings).filter((h) => h.qty > 0).map((h) => h.symbol)]);
-  const ranked = UNIVERSE.filter((s) => !exclude.has(s) && S.uni[s]?.history?.length > 60)
-    .map((s) => ({ s, q: S.uni[s], plan: entryPlan(indicators(S.uni[s].history, S.uni[s].price)) }))
-    .sort((a, b) => b.plan.score - a.plan.score || a.plan.dist - b.plan.dist)
-    .slice(0, 8);
+  const prevTop = new Set(S.runs[1]?.data?.ranked?.slice(0, 12) || []);
+  const ranked = suggestedSymbols()
+    .map((x) => { const sn = snap(x); const q = S.uni[x] || S.quotes[x] || (sn && { symbol: x, name: sn.name, currency: sn.currency, price: sn.price, prevClose: null, history: [] }); return { x, q, plan: planFor(x, q), isNew: S.runs[1] && !prevTop.has(x) }; })
+    .filter((r) => r.q && r.plan);
+  const info = S.runs[0] ? `${runInfo()} su ${S.runs[0].data.universe} titoli — ${nextRunLabel()}.` : 'Calcolati sui prezzi attuali.';
   if (ranked.length) {
-    if (cards.length) cards.push(`<div style="grid-column:1/-1" class="hint"><b>Suggeriti</b> — i titoli con il quadro tecnico migliore tra una selezione diversificata (Italia, Europa, USA, ETF).</div>`);
-    for (const r of ranked) cards.push(watchCard(r.s, r.q, r.plan));
+    cards.push(`<div style="grid-column:1/-1" class="hint"><b>Suggeriti</b> — i titoli con il quadro tecnico migliore tra una selezione diversificata (Italia, Europa, USA, ETF). ${esc(info)}</div>`);
+    for (const r of ranked) cards.push(watchCard(r.x, r.q, r.plan, null, r.isNew));
   } else if (!Object.keys(S.uni).length) cards.push(`<div class="empty" style="grid-column:1/-1">Caricamento suggerimenti…</div>`);
   el.innerHTML = cards.join('');
-  $$('canvas[data-wspark]', el).forEach((c) => sparkline(c, (S.uni[c.dataset.wspark] || S.quotes[c.dataset.wspark])?.history.slice(-126) || []));
+  $$('canvas[data-wspark]', el).forEach((c) => sparkline(c, (S.uni[c.dataset.wspark] || S.quotes[c.dataset.wspark])?.history?.slice(-126) || []));
 }
 
 function renderTx() {
@@ -352,7 +412,10 @@ function renderAll() {
   computeHoldings();
   for (const h of Object.values(S.holdings)) {
     const q = h.quote;
-    h.eval = q?.history?.length > 60 && h.qty > 0 ? { ...evaluatePosition(indicators(q.history, q.price), { value: h.valueEur, cost: h.costEur }), ind: indicators(q.history, q.price) } : null;
+    const pos = { value: h.valueEur, cost: h.costEur };
+    const sn = snap(h.symbol), pv = prevSnap(h.symbol);
+    const ind = sn ? sn.ind : q?.history?.length > 60 ? indicators(q.history, q.price) : null;
+    h.eval = ind && h.qty > 0 ? { ...evaluatePosition(ind, pos), ind, prevAction: pv ? evaluatePosition(pv.ind, pos).action : null } : null;
   }
   computeSeries();
   if (MINI) { renderMini($('.mini')); return; }
@@ -374,10 +437,8 @@ async function refresh({ quiet = false } = {}) {
     S.updated = Date.now();
     renderAll();
     if (!MINI) {
-      const missing = UNIVERSE.concat(S.watch.map((w) => w.symbol)).filter((s) => !S.quotes[s]);
-      const u = await fetchQuotes([...new Set(missing)], '1y').catch(() => ({}));
-      S.uni = { ...u };
-      for (const s of UNIVERSE) if (S.quotes[s]) S.uni[s] = S.quotes[s];
+      S.uni = {};
+      await loadSuggestionQuotes();
       renderWatch();
     }
     if (!quiet) toast('Prezzi aggiornati');
@@ -394,6 +455,7 @@ async function loadData() {
   [S.tx, S.watch] = await Promise.all([store.listTx(), store.listWatch()]);
   try { const c = JSON.parse(localStorage.getItem('pf_cache') || 'null'); if (c) { S.quotes = c.quotes || {}; S.updated = c.updated; } } catch {}
   renderAll();
+  await loadAnalysis();
   await refresh({ quiet: true });
 }
 
@@ -564,6 +626,7 @@ async function startApp() {
   try { await loadData(); } catch (e) { toast(`Errore dati: ${e.message}`, 5000); }
   setInterval(() => document.visibilityState === 'visible' && refresh({ quiet: true }), REFRESH_MS);
   setInterval(liveTick, LIVE_MS);
+  setInterval(() => loadAnalysis({ notify: true }), 15 * 60 * 1000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - (S.updated || 0) > 120000) refresh({ quiet: true });
   });
@@ -660,6 +723,7 @@ function bind() {
     localStorage.removeItem('pf_cache');
     location.reload();
   });
+  $('#runAnalysisBtn').addEventListener('click', () => { $('#menuDlg').close(); runAnalysisNow(); });
   $('#exportBtn').addEventListener('click', () => {
     const rows = [['data', 'operazione', 'simbolo', 'nome', 'quantita', 'prezzo', 'valuta', 'commissioni', 'nota']]
       .concat(sortTx(S.tx).map((t) => [t.trade_date, t.side === 'buy' ? 'acquisto' : 'vendita', t.symbol, t.name, t.quantity, t.price, t.currency, t.fees, t.note || '']));

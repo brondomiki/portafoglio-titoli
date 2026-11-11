@@ -4,7 +4,32 @@
   "headers": [
     {
       "source": "/sw.js",
-      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ],
+  "functions": {
+    "api/cron-analysis.js": {
+      "includeFiles": "public/analysis.js",
+      "maxDuration": 60
+    },
+    "api/analysis.js": {
+      "includeFiles": "public/analysis.js",
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron-analysis",
+      "schedule": "30 7 * * 1-5"
+    },
+    {
+      "path": "/api/cron-analysis",
+      "schedule": "0 14 * * 1-5"
     }
   ]
 }

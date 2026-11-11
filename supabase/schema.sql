@@ -40,3 +40,15 @@ create policy "tx_own" on public.transactions
 drop policy if exists "wl_own" on public.watchlist;
 create policy "wl_own" on public.watchlist
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Analisi programmate (mattina e pomeriggio), scritte dal server con la chiave service_role
+create table if not exists public.analysis_runs (
+  id      bigint generated always as identity primary key,
+  run_at  timestamptz not null default now(),
+  slot    text not null,
+  data    jsonb not null
+);
+create index if not exists analysis_runs_run_at_idx on public.analysis_runs (run_at desc);
+alter table public.analysis_runs enable row level security;
+drop policy if exists "analysis_read" on public.analysis_runs;
+create policy "analysis_read" on public.analysis_runs for select to anon, authenticated using (true);

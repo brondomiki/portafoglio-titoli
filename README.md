@@ -25,6 +25,10 @@ App web installabile (PWA) per seguire i propri titoli: grafico verde/rosso, acq
    → *Deploy*. (In alternativa usa l'integrazione Supabase del Marketplace Vercel: le variabili vengono create in automatico.)
 4. Apri l'indirizzo `https://<progetto>.vercel.app`, crea l'account e accedi da PC e telefono con le stesse credenziali.
 
+## Analisi automatica (mattina e pomeriggio)
+Valutazioni e titoli suggeriti vengono ricalcolati da Vercel Cron nei giorni di borsa verso le **8:30** e le **15:00** (ora italiana, orario invernale; in estate un'ora più tardi) e salvati in `analysis_runs`.
+Serve una variabile in più su Vercel: `SUPABASE_SERVICE_ROLE_KEY` = chiave **service_role** (o *secret*) da Supabase → Project Settings → API. Dal menu account dell'app c'è anche **Aggiorna analisi adesso**.
+
 ## Installazione su ogni dispositivo
 
 | Dispositivo | Come |

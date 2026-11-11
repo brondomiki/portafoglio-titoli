@@ -149,10 +149,29 @@ export function entryPlan(ind) {
   const dist = (p / entry - 1) * 100;
   const stop = entry * (1 - Math.min(0.12, Math.max(0.05, ind.vol / 100 / 3)));
   const target = Math.max(ind.high52, entry * 1.1);
-  let status;
-  if (score < -1) status = { label: 'Trend negativo – attendere', tone: 'neg' };
-  else if (dist <= 1.5) status = { label: 'In zona d\'ingresso', tone: 'pos' };
-  else if (dist <= 5) status = { label: 'Vicino all\'ingresso', tone: 'neu' };
-  else status = { label: 'Attendere ritracciamento', tone: 'neu' };
+  const status = statusFor(score, dist);
   return { score, reasons, entry, dist, stop, target, status };
 }
+
+function statusFor(score, dist) {
+  if (score < -1) return { label: 'Trend negativo – attendere', tone: 'neg' };
+  if (dist <= 1.5) return { label: "In zona d'ingresso", tone: 'pos' };
+  if (dist <= 5) return { label: "Vicino all'ingresso", tone: 'neu' };
+  return { label: 'Attendere ritracciamento', tone: 'neu' };
+}
+
+// Livelli calcolati nell'ultima analisi programmata, stato ricalcolato sul prezzo attuale
+export function livePlan(plan, livePrice) {
+  if (livePrice == null || !plan.entry) return plan;
+  const dist = (livePrice / plan.entry - 1) * 100;
+  return { ...plan, dist, status: statusFor(plan.score, dist) };
+}
+
+// Universo dei titoli analizzati per i suggerimenti (Italia, Europa, USA, ETF)
+export const UNIVERSE = [
+  'ENEL.MI', 'ISP.MI', 'UCG.MI', 'ENI.MI', 'RACE.MI', 'LDO.MI', 'PRY.MI', 'G.MI', 'MONC.MI', 'TRN.MI',
+  'STLAM.MI', 'STMMI.MI', 'BAMI.MI', 'MB.MI', 'TEN.MI', 'SRG.MI', 'POST.MI', 'CPR.MI', 'BMPS.MI', 'A2A.MI',
+  'ASML.AS', 'SAP.DE', 'MC.PA', 'SU.PA', 'NOVO-B.CO', 'SIE.DE', 'ALV.DE', 'AIR.PA', 'OR.PA', 'TTE.PA', 'IBE.MC', 'RMS.PA',
+  'MSFT', 'AAPL', 'NVDA', 'GOOGL', 'AMZN', 'META', 'JPM', 'V', 'MA', 'AVGO', 'LLY', 'COST', 'BRK-B', 'UNH', 'XOM', 'TSM', 'AMD', 'NFLX',
+  'SWDA.MI', 'CSSPX.MI', 'EIMI.MI', 'XDWT.DE', 'VWCE.DE', 'SGLD.MI', 'IUSN.DE', 'EQQQ.MI'
+];
