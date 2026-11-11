@@ -36,6 +36,15 @@ const price = (v, cur) => {
   try { return v.toLocaleString('it-IT', { style: 'currency', currency: cur === 'GBp' ? 'GBP' : cur || 'EUR', minimumFractionDigits: d, maximumFractionDigits: d }).replace('£', cur === 'GBp' ? 'p ' : '£'); }
   catch { return `${num(v, d)} ${cur || ''}`; }
 };
+const EXT_LABEL = { pre: 'Pre-market', post: 'After-hours' };
+// prezzo fuori orario (titoli USA): etichetta, prezzo, variazione e impatto in euro sulla posizione
+function extInfo(h) {
+  const e = h.quote?.ext;
+  if (!e || e.price == null) return null;
+  const eurImpact = h.fx != null && h.price != null ? h.qty * (e.price - h.price) * h.fx : null;
+  return { ...e, label: EXT_LABEL[e.type] || 'Fuori orario', eurImpact };
+}
+const extTime = (t) => new Date(t).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 const cls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -226,6 +235,7 @@ function renderHoldings() {
         <div class="sym">${esc(h.symbol)} ${adv ? `<span class="badge ${adv.tone}">${esc(adv.action)}</span>` : ''}</div>
         <div class="nm">${esc(h.name)}</div>
         <div class="meta">${num(h.qty)} × ${price(h.avg, h.currency)} · ora ${price(h.price, h.currency)}</div>
+        ${(() => { const x = extInfo(h); return x ? `<div class="ext" title="Ultimo scambio ${x.label.toLowerCase()} alle ${extTime(x.time)}"><span class="ext-tag ${x.type}">${x.label}</span> <b>${price(x.price, h.currency)}</b> <span class="${cls(x.changePct)}">${pct(x.changePct)}</span>${x.eurImpact != null ? ` <span class="${cls(x.eurImpact)}">(${sEur(x.eurImpact)})</span>` : ''} <span class="muted">${extTime(x.time)}</span></div>` : ''; })()}
       </div>
       <canvas data-spark="${esc(h.symbol)}"></canvas>
       <div class="right">
@@ -324,11 +334,15 @@ function renderMini(root) {
   const k = (n) => root.querySelector(`[data-k="${n}"]`);
   k('total').textContent = eur(T.value);
   k('day').innerHTML = `<span class="${cls(T.day)}">${sEur(T.day)} (${pct(T.dayPct)})</span>`;
-  k('pl').innerHTML = `Totale<br><b class="${cls(T.pl)}">${pct(T.plPct)}</b>`;
+  const extSum = Object.values(S.holdings).filter((h) => h.qty > 0).map(extInfo).filter((x) => x && x.eurImpact != null);
+  const extTot = extSum.reduce((a, x) => a + x.eurImpact, 0);
+  const extType = extSum.some((x) => x.type === 'pre') ? 'Pre-market' : 'After-hours';
+  k('pl').innerHTML = `Totale<br><b class="${cls(T.pl)}">${pct(T.plPct)}</b>${extSum.length ? `<br><small>${extType} <b class="${cls(extTot)}">${sEur(extTot)}</b></small>` : ''}`;
   const list = Object.values(S.holdings).filter((h) => h.qty > 0).sort((a, b) => (b.valueEur || 0) - (a.valueEur || 0));
   k('list').innerHTML = list.length ? list.map((h) => {
     const plp = h.costEur ? (h.valueEur / h.costEur - 1) * 100 : null;
-    return `<div class="mini-row"><b>${esc(h.symbol)}</b><span class="${cls(h.dayPct)}">${pct(h.dayPct)}</span><span class="${cls(plp)}">${pct(plp)}</span></div>`;
+    const x = extInfo(h);
+    return `<div class="mini-row"><b>${esc(h.symbol)}</b><span class="${cls(h.dayPct)}">${pct(h.dayPct)}</span><span class="${cls(plp)}">${pct(plp)}</span>${x ? `<div class="mini-ext"><span class="ext-tag ${x.type}">${x.type === 'pre' ? 'Pre' : 'After'}</span> ${price(x.price, h.currency)} <span class="${cls(x.changePct)}">${pct(x.changePct)}</span></div>` : ''}</div>`;
   }).join('') : '<div class="muted" style="text-align:center;padding:10px">Nessun titolo</div>';
   k('time').textContent = S.updated ? `colonne: oggi · totale — agg. ${new Date(S.updated).toLocaleTimeString('it-IT')}` : '';
   requestAnimationFrame(() => drawChart(k('chart'), S.series.filter((p) => p.t >= Date.now() - 92 * 864e5), { lineWidth: 1.5, padTop: 2, padBottom: 2 }));
@@ -399,7 +413,8 @@ async function liveTick() {
     for (const [sym, q] of Object.entries(quotes)) {
       for (const base of [S.quotes[sym], S.uni[sym]]) {
         if (!base || q.price == null) continue;
-        if (base.price !== q.price || base.prevClose !== q.prevClose) changed = true;
+        if (base.price !== q.price || base.prevClose !== q.prevClose || base.ext?.price !== q.ext?.price) changed = true;
+        base.ext = q.ext ?? null;
         base.price = q.price;
         if (q.prevClose != null) base.prevClose = q.prevClose;
         if (q.fxToEur != null) base.fxToEur = q.fxToEur;

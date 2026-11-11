@@ -45,6 +45,43 @@ async function getChart(symbol, range = '1y', interval = '1d') {
   };
 }
 
+
+// Pre-market / after-hours (solo titoli USA): ultimo prezzo fuori dall'orario regolare (9:30–16:00 ora di New York)
+const etMinutes = (ms) => {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms));
+  const h = +parts.find((x) => x.type === 'hour').value, m = +parts.find((x) => x.type === 'minute').value;
+  return h * 60 + m;
+};
+const isUS = (q) => q.currency === 'USD' && !q.symbol.includes('.') && !q.symbol.includes('=') && !q.symbol.startsWith('^');
+
+async function getExtended(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1m&includePrePost=true`;
+  let r = await fetch(url, { headers: HEADERS });
+  if (!r.ok) r = await fetch(url.replace('query1', 'query2'), { headers: HEADERS });
+  if (!r.ok) return null;
+  const res = (await r.json())?.chart?.result?.[0];
+  if (!res) return null;
+  const m = res.meta || {};
+  const ts = res.timestamp || [];
+  const cl = res.indicators?.quote?.[0]?.close || [];
+  let i = ts.length - 1;
+  while (i >= 0 && (cl[i] == null || !isFinite(cl[i]))) i--;
+  if (i < 0) return null;
+  const t = ts[i] * 1000;
+  const mins = etMinutes(t);
+  const regular = mins >= 570 && mins < 960;
+  if (regular || t <= (m.regularMarketTime || 0) * 1000) return null;
+  const base = m.regularMarketPrice;
+  const price = +cl[i].toFixed(4);
+  return {
+    type: mins < 570 ? 'pre' : 'post',
+    price,
+    change: base ? price - base : null,
+    changePct: base ? (price / base - 1) * 100 : null,
+    time: t
+  };
+}
+
 function baseCurrency(cur) {
   if (!cur) return { cur: 'EUR', div: 1 };
   if (cur === 'GBp' || cur === 'GBX') return { cur: 'GBP', div: 100 };
@@ -67,6 +104,13 @@ export default async function handler(req, res) {
       if (r.status === 'fulfilled') quotes[symbols[i]] = r.value;
       else errors[symbols[i]] = String(r.reason?.message || r.reason);
     });
+
+    // prezzi pre-market / after-hours per i titoli USA
+    await Promise.all(
+      Object.values(quotes).filter(isUS).map(async (q) => {
+        try { q.ext = await getExtended(q.symbol); } catch { q.ext = null; }
+      })
+    );
 
     // tassi di cambio -> EUR (valore di 1 unità della valuta di quotazione in euro)
     const curs = new Set(Object.values(quotes).map((q) => baseCurrency(q.currency).cur));

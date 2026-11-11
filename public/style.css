@@ -202,3 +202,11 @@ body.mini-mode { background: var(--card); }
 .mini-row:first-child { border-top: 0; }
 .mini-row b { font-weight: 700; }
 .mini-foot { font-size: 11px; color: var(--muted); text-align: center; }
+
+/* pre-market / after-hours */
+.ext { font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.ext-tag { display: inline-block; font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 5px; letter-spacing: .02em; }
+.ext-tag.pre { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.ext-tag.post { background: color-mix(in srgb, #8b5cf6 20%, transparent); color: #8b5cf6; }
+@media (prefers-color-scheme: dark) { .ext-tag.post { color: #b197fc; } }
+.mini-ext { grid-column: 1 / -1; font-size: 11.5px; margin-top: -2px; color: var(--muted); }
