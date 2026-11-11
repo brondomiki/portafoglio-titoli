@@ -8,14 +8,31 @@ export function supa() {
   let url = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
   try { if (url) url = new URL(url.startsWith('http') ? url : `https://${url}`).origin; } catch { url = ''; }
   const anon = (env.SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
-  const service = (env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY || '').trim();
+  const clean = (v) => String(v || '').trim().replace(/^["']|["']$/g, '').trim();
+  const service = clean(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY);
   const headers = (key) => ({ apikey: key, ...(key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}), 'Content-Type': 'application/json' });
   return { url, anon, service, headers };
 }
 
+// controlla che la chiave server sia davvero una service_role / secret key
+export function serviceKeyProblem(key) {
+  if (!key) return 'Manca la variabile SUPABASE_SERVICE_ROLE_KEY su Vercel';
+  if (key.includes('•') || key.includes('*')) return 'La chiave in SUPABASE_SERVICE_ROLE_KEY è stata copiata mascherata (con i pallini): in Supabase premi "Reveal" e copia la chiave completa';
+  if (key.startsWith('sb_publishable_')) return 'In SUPABASE_SERVICE_ROLE_KEY hai messo la chiave publishable: serve la "secret key" (sb_secret_...)';
+  if (key.startsWith('sb_secret_')) return null;
+  if (key.startsWith('eyJ')) {
+    try {
+      const role = JSON.parse(Buffer.from(key.split('.')[1], 'base64url').toString()).role;
+      if (role === 'anon') return 'In SUPABASE_SERVICE_ROLE_KEY hai messo la chiave anon: serve la chiave service_role';
+      return null;
+    } catch { return 'La chiave in SUPABASE_SERVICE_ROLE_KEY non è completa: ricopiala per intero'; }
+  }
+  return 'Il valore di SUPABASE_SERVICE_ROLE_KEY non è una chiave API (forse è il "JWT secret"): serve la service_role key o la secret key (sb_secret_...)';
+}
+
 export async function latestRuns(limit = 2) {
   const s = supa();
-  const key = s.service || s.anon;
+  const key = s.anon || s.service; // la lettura è pubblica: basta la chiave anon
   if (!s.url || !key) return [];
   const r = await fetch(`${s.url}/rest/v1/analysis_runs?select=id,run_at,slot,data&order=run_at.desc&limit=${limit}`, { headers: s.headers(key) });
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
@@ -26,7 +43,9 @@ const romeHour = (d = new Date()) => +new Intl.DateTimeFormat('it-IT', { timeZon
 
 export async function runAnalysis({ slot } = {}) {
   const s = supa();
-  if (!s.url || !s.service) throw new Error('Manca la variabile SUPABASE_SERVICE_ROLE_KEY su Vercel');
+  const problem = serviceKeyProblem(s.service);
+  if (!s.url) throw new Error('Manca SUPABASE_URL su Vercel');
+  if (problem) throw new Error(problem);
   const H = s.headers(s.service);
 
   // evita doppioni ravvicinati (es. cron + pulsante)
@@ -70,6 +89,7 @@ export async function runAnalysis({ slot } = {}) {
     headers: { ...H, Prefer: 'return=representation' },
     body: JSON.stringify({ slot: label, data })
   });
+  if (ins.status === 401) throw new Error('Supabase rifiuta SUPABASE_SERVICE_ROLE_KEY: ricopia da Supabase → Project Settings → API Keys la chiave service_role (o la secret key) di questo progetto, poi fai Redeploy');
   if (!ins.ok) throw new Error(`Salvataggio non riuscito (${ins.status}): ${await ins.text()}`);
   const [run] = await ins.json();
 
