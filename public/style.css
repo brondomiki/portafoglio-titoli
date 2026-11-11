@@ -123,6 +123,10 @@ h3 { margin: 0 0 12px; font-size: 17px; }
 .hold canvas { width: 76px; height: 32px; }
 .hold .right { text-align: right; font-variant-numeric: tabular-nums; }
 .hold .right b { display: block; }
+.hold .right .day-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.hold .right .day-big { font-size: 18px; font-weight: 800; line-height: 1.15; }
+.hold .right .day-pct { display: block; font-size: 13px; font-weight: 700; }
+.hold .right .tot-line { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
 .hold .ops { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 .mini-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 7px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
 .mini-btn.buy { color: var(--pos); }

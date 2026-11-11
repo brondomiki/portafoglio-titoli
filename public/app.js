@@ -297,9 +297,10 @@ function renderHoldings() {
       </div>
       <canvas data-spark="${esc(h.symbol)}"></canvas>
       <div class="right">
-        <b>${eur(h.valueEur)}</b>
-        <span class="${cls(pl)}">${sEur(pl)} (${pct(plp)})</span><br>
-        <small class="${cls(h.dayPct)}">oggi ${pct(h.dayPct)}</small>
+        <span class="day-label">Oggi</span>
+        <b class="day-big ${cls(h.dayEur)}">${sEur(h.dayEur)}</b>
+        <span class="day-pct ${cls(h.dayPct)}">${pct(h.dayPct)}</span>
+        <div class="tot-line">Valore ${eur(h.valueEur)}<br>Totale <span class="${cls(pl)}">${sEur(pl)} (${pct(plp)})</span></div>
         <div class="ops"><button class="mini-btn buy" data-trade="buy" data-sym="${esc(h.symbol)}">Compra</button><button class="mini-btn sell" data-trade="sell" data-sym="${esc(h.symbol)}">Vendi</button></div>
       </div>
     </div>`;
