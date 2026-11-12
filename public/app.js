@@ -1,4 +1,5 @@
 import { drawChart, sparkline } from './chart.js';
+import { speak, stopSpeaking, speechSupported, onSpeechChange, isSpeaking } from './speech.js';
 import { indicators, evaluatePosition, entryPlan, livePlan, UNIVERSE } from './analysis.js';
 
 const REFRESH_MS = 5 * 60 * 1000; // storico completo e suggerimenti
@@ -256,6 +257,77 @@ async function loadSuggestionQuotes() {
   for (const x of want) if (S.quotes[x]) S.uni[x] = S.quotes[x];
 }
 
+/* ---------- lettura ad alta voce ---------- */
+const SPEAKER = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" class="fill"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>';
+const STOPICON = '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" class="fill"/></svg>';
+const speakBtn = (id, label = 'Ascolta') => speechSupported
+  ? `<button type="button" class="speak-btn ${isSpeaking(id) ? 'on' : ''}" data-speak="${esc(id)}" title="${label}" aria-label="${label}">${isSpeaking(id) ? STOPICON : SPEAKER}<span>${isSpeaking(id) ? 'Stop' : label}</span></button>`
+  : '';
+const spokenName = (n, sym) => String(n || sym).replace(/\b(Inc|Corp|Corporation|S\.p\.A|SpA|N\.V|AG|SE|plc|Ltd|Holdings?|Class [AB])\b\.?/gi, '').replace(/[,.]\s*$/, '').replace(/\s+/g, ' ').trim();
+const sEurSay = (v) => (v == null || !isFinite(v) ? 'non disponibile' : `${v >= 0 ? '+' : '-'}${Math.abs(v).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
+const pctSay = (v) => (v == null || !isFinite(v) ? '' : `${v >= 0 ? '+' : '-'}${Math.abs(v).toLocaleString('it-IT', { maximumFractionDigits: 1 })}%`);
+
+function adviceItemText(h) {
+  const e = h.eval;
+  if (!e) return [`${spokenName(h.name, h.symbol)}: dati insufficienti per una valutazione.`];
+  const out = [`${spokenName(h.name, h.symbol)}: ${e.action}.`];
+  if (e.prevAction && e.prevAction !== e.action) out.push(`La valutazione è cambiata da ${e.prevAction} a ${e.action}.`);
+  out.push(`Oggi ${sEurSay(h.dayEur)}, dall'acquisto ${sEurSay(h.valueEur - h.costEur)}.`);
+  out.push(e.detail);
+  const pros = e.reasons.filter((r) => r[0] === '+').slice(0, 2).map((r) => r[1]);
+  const cons = e.reasons.filter((r) => r[0] === '-').slice(0, 2).map((r) => r[1]);
+  if (pros.length) out.push(`A favore: ${pros.join('; ')}.`);
+  if (cons.length) out.push(`Contro: ${cons.join('; ')}.`);
+  return out;
+}
+function adviceAllText() {
+  const T = totals();
+  const list = Object.values(S.holdings).filter((h) => h.qty > 0).sort((a, b) => Math.abs(b.dayEur || 0) - Math.abs(a.dayEur || 0));
+  if (!list.length) return ['Non hai ancora titoli in portafoglio.'];
+  const out = [
+    `Riepilogo del portafoglio. ${S.runs[0] ? runInfo() + '.' : ''}`,
+    `Oggi ${sEurSay(T.day)}, pari a ${pctSay(T.dayPct)}.`,
+    `Valore attuale ${eur(T.value)}; dall'acquisto ${sEurSay(T.pl)}, pari a ${pctSay(T.plPct)}.`
+  ];
+  const changed = list.filter((h) => h.eval?.prevAction && h.eval.prevAction !== h.eval.action);
+  if (changed.length) out.push(`Valutazioni cambiate: ${changed.map((h) => spokenName(h.name, h.symbol)).join(', ')}.`);
+  for (const h of list) out.push(...adviceItemText(h));
+  return out;
+}
+function watchText() {
+  const out = [];
+  for (const w of S.watch) {
+    const q = S.uni[w.symbol] || S.quotes[w.symbol]; const plan = planFor(w.symbol, q);
+    if (q && plan) out.push(`${spokenName(q.name, w.symbol)}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}.`);
+  }
+  if (out.length) out.unshift('Titoli che stai osservando.');
+  const sugg = suggestedSymbols();
+  if (sugg.length) {
+    out.push(`Titoli suggeriti${S.runs[0] ? ', ' + runInfo().toLowerCase() : ''}.`);
+    const prevTop = new Set(S.runs[1]?.data?.ranked?.slice(0, 12) || []);
+    for (const x of sugg) {
+      const sn = snap(x); const q = S.uni[x] || S.quotes[x] || (sn && { name: sn.name, currency: sn.currency, price: sn.price });
+      const plan = planFor(x, q); if (!q || !plan) continue;
+      out.push(`${spokenName(q.name, x)}${S.runs[1] && !prevTop.has(x) ? ', nuovo' : ''}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}, stop ${price(plan.stop, q.currency)}, obiettivo ${price(plan.target, q.currency)}.`);
+    }
+  }
+  out.push('Queste sono valutazioni tecniche automatiche, non consulenza finanziaria.');
+  return out;
+}
+function speakById(id) {
+  if (id === 'advice-all') return speak(adviceAllText(), id);
+  if (id === 'watch-all') return speak(watchText(), id);
+  if (id.startsWith('adv:')) { const h = S.holdings[id.slice(4)]; if (h) return speak(adviceItemText(h), id); }
+}
+onSpeechChange(() => {
+  $$('[data-speak]').forEach((b) => {
+    const on = isSpeaking(b.dataset.speak);
+    b.classList.toggle('on', on);
+    const label = b.title || 'Ascolta';
+    b.innerHTML = `${on ? STOPICON : SPEAKER}<span>${on ? 'Stop' : label}</span>`;
+  });
+});
+
 /* ---------- rendering ---------- */
 function renderHeader() {
   const T = totals();
@@ -321,7 +393,7 @@ function renderAdvice() {
     if (!e) return `<div class="adv"><div class="adv-head"><b>${esc(h.symbol)}</b><span class="badge neu">Dati insufficienti</span></div></div>`;
     const proj = e.ind.proj;
     return `<div class="adv">
-      <div class="adv-head"><b>${esc(h.symbol)} <small class="muted">${esc(h.name)}</small></b><span>${e.prevAction && e.prevAction !== e.action ? `<small class="muted">prima: ${esc(e.prevAction)} → </small>` : ''}<span class="badge ${e.tone}">${esc(e.action)}</span></span></div>
+      <div class="adv-head"><b>${esc(h.symbol)} <small class="muted">${esc(h.name)}</small> ${speakBtn('adv:' + h.symbol, 'Ascolta')}</b><span>${e.prevAction && e.prevAction !== e.action ? `<small class="muted">prima: ${esc(e.prevAction)} → </small>` : ''}<span class="badge ${e.tone}">${esc(e.action)}</span></span></div>
       <p>${esc(e.detail)}</p>
       ${proj ? `<div class="proj">Tendenza stimata a 1 mese: <b class="${cls(proj.pct)}">${pct(proj.pct)}</b> <span class="muted">(affidabilità ${proj.r2 > 0.6 ? 'alta' : proj.r2 > 0.3 ? 'media' : 'bassa'})</span> · Stop indicativo: <b>${price(e.stop, h.currency)}</b></div>` : ''}
       <ul>${e.reasons.map(([s, r]) => `<li class="${s === '+' ? 'p' : 'm'}">${esc(r)}</li>`).join('')}</ul>
@@ -724,6 +796,14 @@ function bind() {
     localStorage.removeItem('pf_cache');
     location.reload();
   });
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-speak]'); if (b) { e.preventDefault(); speakById(b.dataset.speak); } });
+  if (speechSupported) {
+    $('#speakAdviceSlot').innerHTML = speakBtn('advice-all', 'Ascolta tutto');
+    $('#speakWatchSlot').innerHTML = speakBtn('watch-all', 'Ascolta');
+    const rs = $('#rateSel'); rs.value = localStorage.getItem('pf_rate') || '1.05';
+    rs.addEventListener('change', () => localStorage.setItem('pf_rate', rs.value));
+  } else $('#rateRow').hidden = true;
+  window.addEventListener('pagehide', stopSpeaking);
   $('#runAnalysisBtn').addEventListener('click', () => { $('#menuDlg').close(); runAnalysisNow(); });
   $('#exportBtn').addEventListener('click', () => {
     const rows = [['data', 'operazione', 'simbolo', 'nome', 'quantita', 'prezzo', 'valuta', 'commissioni', 'nota']]

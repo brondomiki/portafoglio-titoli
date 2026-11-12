@@ -96,7 +96,7 @@
       </section>
 
       <section class="card" data-panel="advice">
-        <div class="card-head"><h2>Valutazioni</h2></div>
+        <div class="card-head"><h2>Valutazioni</h2><span id="speakAdviceSlot"></span></div>
         <p class="hint" id="adviceInfo"></p>
         <div id="advice" class="list"></div>
       </section>
@@ -104,7 +104,7 @@
       <section class="card span2" data-panel="watch">
         <div class="card-head">
           <h2>Da tenere d'occhio</h2>
-          <button class="btn small" id="addWatchBtn">+ Aggiungi</button>
+          <span class="head-actions"><span id="speakWatchSlot"></span><button class="btn small" id="addWatchBtn">+ Aggiungi</button></span>
         </div>
         <p class="hint">Prezzo d'accesso = livello di supporto (medie mobili / minimi recenti) su cui entrare con più margine. Stop e obiettivo sono indicativi.</p>
         <div id="watch" class="watch-grid"></div>
@@ -191,6 +191,9 @@
       <p id="menuWho" class="muted"></p>
       <div class="menu-col">
         <a class="btn" href="/?view=mini" target="_blank" rel="noopener">Apri widget compatto</a>
+        <label id="rateRow" class="rate-row">Velocità della voce
+          <select id="rateSel"><option value="0.85">Lenta</option><option value="1.05">Normale</option><option value="1.25">Veloce</option><option value="1.45">Molto veloce</option></select>
+        </label>
         <button class="btn" type="button" id="runAnalysisBtn">Aggiorna analisi adesso</button>
         <button class="btn" type="button" id="exportBtn">Esporta movimenti (CSV)</button>
         <button class="btn" type="button" id="importLocalBtn" hidden>Importa dati locali nell'account</button>
