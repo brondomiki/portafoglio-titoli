@@ -4,6 +4,10 @@ const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
 export const speechSupported = !!synth && typeof SpeechSynthesisUtterance !== 'undefined';
 
 let voice = null;
+let queue = [];      // frasi della lettura in corso
+let pos = 0;         // frase in lettura
+let wakeLock = null; // tiene lo schermo acceso durante la lettura
+let paused = null;   // lettura interrotta dal blocco del telefono: { id, queue, pos }
 let current = null; // id del pulsante che sta leggendo
 const listeners = new Set();
 export const onSpeechChange = (fn) => listeners.add(fn);
@@ -41,11 +45,63 @@ export function sayable(text) {
     .trim();
 }
 
+// --- schermo sempre acceso durante la lettura (Screen Wake Lock API) ---
+async function keepAwake() {
+  try {
+    if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    }
+  } catch { wakeLock = null; }
+}
+function releaseAwake() { try { wakeLock?.release(); } catch {} wakeLock = null; }
+
+function finish(id) {
+  if (current !== id) return;
+  current = null; queue = []; pos = 0;
+  releaseAwake();
+  emit();
+}
+
 export function stopSpeaking() {
   if (!speechSupported) return;
+  paused = null;
   synth.cancel();
-  current = null;
+  current = null; queue = []; pos = 0;
+  releaseAwake();
   emit();
+}
+
+function playFrom(id, from) {
+  const rate = +(localStorage.getItem('pf_rate') || 1.05);
+  for (let i = from; i < queue.length; i++) {
+    const u = new SpeechSynthesisUtterance(queue[i]);
+    u.lang = 'it-IT';
+    if (voice) u.voice = voice;
+    u.rate = rate;
+    u.onstart = () => { if (current === id) pos = i; };
+    if (i === queue.length - 1) u.onend = () => finish(id);
+    u.onerror = (e) => { if (e.error !== 'interrupted' && e.error !== 'canceled') finish(id); };
+    synth.speak(u);
+  }
+}
+
+// se il telefono viene bloccato a mano la lettura si interrompe: riprende da dove era rimasta alla riaccensione
+if (speechSupported && typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && current) {
+      paused = { id: current, queue: [...queue], pos };
+    } else if (document.visibilityState === 'visible') {
+      if (paused) {
+        const p = paused; paused = null;
+        synth.cancel();
+        current = p.id; queue = p.queue; pos = p.pos;
+        emit();
+        keepAwake();
+        setTimeout(() => playFrom(p.id, p.pos), 300);
+      } else if (current) keepAwake();
+    }
+  });
 }
 
 // legge un elenco di frasi; id identifica il pulsante (premuto di nuovo = stop)
@@ -53,20 +109,14 @@ export function speak(parts, id) {
   if (!speechSupported) return false;
   if (current === id) { stopSpeaking(); return true; }
   synth.cancel();
+  paused = null;
   current = id;
   emit();
+  keepAwake();
   // frasi brevi: evita che Chrome interrompa le letture lunghe
-  const chunks = parts.flatMap((p) => sayable(p).split(/(?<=[.!?])\s+/)).filter(Boolean);
-  const rate = +(localStorage.getItem('pf_rate') || 1.05);
-  chunks.forEach((c, i) => {
-    const u = new SpeechSynthesisUtterance(c);
-    u.lang = 'it-IT';
-    if (voice) u.voice = voice;
-    u.rate = rate;
-    if (i === chunks.length - 1) u.onend = () => { if (current === id) { current = null; emit(); } };
-    u.onerror = (e) => { if (e.error !== 'interrupted' && e.error !== 'canceled' && current === id) { current = null; emit(); } };
-    synth.speak(u);
-  });
+  queue = parts.flatMap((p) => sayable(p).split(/(?<=[.!?])\s+/)).filter(Boolean);
+  pos = 0;
+  playFrom(id, 0);
   return true;
 }
 
