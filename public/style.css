@@ -270,3 +270,20 @@ body.car-mode { overflow: hidden; }
   .car-row .car-btn2, .car-pick { min-height: 60px; }
   .car-note { display: none; }
 }
+
+/* pulsante grande "Modalità auto" sempre visibile sul telefono */
+.car-fab { display: none; }
+@media (max-width: 860px) {
+  #app:not([hidden]) ~ .car-fab:not([hidden]) {
+    display: flex; position: fixed; z-index: 40; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom));
+    height: 76px; align-items: center; justify-content: center; gap: 14px;
+    border: 0; border-radius: 22px; background: #2f6bff; color: #fff; font: inherit; font-size: 24px; font-weight: 800;
+    box-shadow: 0 10px 30px #2f6bff66, 0 2px 0 #0003; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .car-fab svg { width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .car-fab svg .fill { fill: currentColor; stroke: none; }
+  .car-fab:active { transform: scale(.98); }
+  body.has-fab .foot { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+  body.has-fab .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
+  body.car-mode .car-fab { display: none !important; }
+}

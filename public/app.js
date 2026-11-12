@@ -859,6 +859,9 @@ function bind() {
   if (speechSupported) {
     $('#carBtn').hidden = false;
     $('#carBtn').addEventListener('click', openCar);
+    $('#carFab').hidden = false;
+    $('#carFab').addEventListener('click', openCar);
+    document.body.classList.add('has-fab');
     $('#carExit').addEventListener('click', closeCar);
     $('#carMain').addEventListener('click', () => { const st = speechState(); st.id && CAR_LABEL[st.id] ? togglePause() : speakById('brief'); });
     $('#carPrev').addEventListener('click', prevSection);
