@@ -1,5 +1,5 @@
 import { drawChart, sparkline } from './chart.js';
-import { speak, stopSpeaking, speechSupported, onSpeechChange, isSpeaking } from './speech.js';
+import { speak, stopSpeaking, speechSupported, onSpeechChange, isActive, state as speechState, togglePause, nextSection, prevSection, enableMediaControls } from './speech.js';
 import { indicators, evaluatePosition, entryPlan, livePlan, UNIVERSE } from './analysis.js';
 
 const REFRESH_MS = 5 * 60 * 1000; // storico completo e suggerimenti
@@ -261,7 +261,7 @@ async function loadSuggestionQuotes() {
 const SPEAKER = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" class="fill"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></svg>';
 const STOPICON = '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" class="fill"/></svg>';
 const speakBtn = (id, label = 'Ascolta') => speechSupported
-  ? `<button type="button" class="speak-btn ${isSpeaking(id) ? 'on' : ''}" data-speak="${esc(id)}" title="${label}" aria-label="${label}">${isSpeaking(id) ? STOPICON : SPEAKER}<span>${isSpeaking(id) ? 'Stop' : label}</span></button>`
+  ? `<button type="button" class="speak-btn ${isActive(id) ? 'on' : ''}" data-speak="${esc(id)}" title="${label}" aria-label="${label}">${isActive(id) ? STOPICON : SPEAKER}<span>${isActive(id) ? 'Stop' : label}</span></button>`
   : '';
 const spokenName = (n, sym) => String(n || sym).replace(/\b(Inc|Corp|Corporation|S\.p\.A|SpA|N\.V|AG|SE|plc|Ltd|Holdings?|Class [AB])\b\.?/gi, '').replace(/[,.]\s*$/, '').replace(/\s+/g, ' ').trim();
 const sEurSay = (v) => (v == null || !isFinite(v) ? 'non disponibile' : `${v >= 0 ? '+' : '-'}${Math.abs(v).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
@@ -283,24 +283,23 @@ function adviceItemText(h) {
 function adviceAllText() {
   const T = totals();
   const list = Object.values(S.holdings).filter((h) => h.qty > 0).sort((a, b) => Math.abs(b.dayEur || 0) - Math.abs(a.dayEur || 0));
-  if (!list.length) return ['Non hai ancora titoli in portafoglio.'];
-  const out = [
+  if (!list.length) return [['Non hai ancora titoli in portafoglio.']];
+  const intro = [
     `Riepilogo del portafoglio. ${S.runs[0] ? runInfo() + '.' : ''}`,
     `Oggi ${sEurSay(T.day)}, pari a ${pctSay(T.dayPct)}.`,
     `Valore attuale ${eur(T.value)}; dall'acquisto ${sEurSay(T.pl)}, pari a ${pctSay(T.plPct)}.`
   ];
   const changed = list.filter((h) => h.eval?.prevAction && h.eval.prevAction !== h.eval.action);
-  if (changed.length) out.push(`Valutazioni cambiate: ${changed.map((h) => spokenName(h.name, h.symbol)).join(', ')}.`);
-  for (const h of list) out.push(...adviceItemText(h));
-  return out;
+  if (changed.length) intro.push(`Valutazioni cambiate: ${changed.map((h) => spokenName(h.name, h.symbol)).join(', ')}.`);
+  return [intro, ...list.map(adviceItemText)];
 }
 function watchText() {
   const out = [];
   for (const w of S.watch) {
     const q = S.uni[w.symbol] || S.quotes[w.symbol]; const plan = planFor(w.symbol, q);
-    if (q && plan) out.push(`${spokenName(q.name, w.symbol)}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}.`);
+    if (q && plan) out.push(`Osservato. ${spokenName(q.name, w.symbol)}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}.`);
   }
-  if (out.length) out.unshift('Titoli che stai osservando.');
+
   const sugg = suggestedSymbols();
   if (sugg.length) {
     out.push(`Titoli suggeriti${S.runs[0] ? ', ' + runInfo().toLowerCase() : ''}.`);
@@ -308,28 +307,80 @@ function watchText() {
     for (const x of sugg) {
       const sn = snap(x); const q = S.uni[x] || S.quotes[x] || (sn && { name: sn.name, currency: sn.currency, price: sn.price });
       const plan = planFor(x, q); if (!q || !plan) continue;
-      out.push(`${spokenName(q.name, x)}${S.runs[1] && !prevTop.has(x) ? ', nuovo' : ''}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}, stop ${price(plan.stop, q.currency)}, obiettivo ${price(plan.target, q.currency)}.`);
+      out.push(`Suggerito. ${spokenName(q.name, x)}${S.runs[1] && !prevTop.has(x) ? ', nuovo' : ''}: ${plan.status.label}. Prezzo ${price(q.price, q.currency)}, ingresso sotto ${price(plan.entry, q.currency)}, stop ${price(plan.stop, q.currency)}, obiettivo ${price(plan.target, q.currency)}.`);
     }
   }
   out.push('Queste sono valutazioni tecniche automatiche, non consulenza finanziaria.');
   return out;
 }
+// riepilogo breve, pensato per l'ascolto in auto: ogni titolo è una sezione (Avanti/Indietro)
+function briefText() {
+  const T = totals();
+  const list = Object.values(S.holdings).filter((h) => h.qty > 0).sort((a, b) => Math.abs(b.dayEur || 0) - Math.abs(a.dayEur || 0));
+  if (!list.length) return [['Non hai ancora titoli in portafoglio.']];
+  const intro = [`Portafoglio oggi ${sEurSay(T.day)}, ${pctSay(T.dayPct)}.`, `Valore totale ${eur(T.value)}.`];
+  const changed = list.filter((h) => h.eval?.prevAction && h.eval.prevAction !== h.eval.action);
+  if (changed.length) intro.push(`Valutazioni cambiate: ${changed.map((h) => `${spokenName(h.name, h.symbol)}, ora ${h.eval.action}`).join('; ')}.`);
+  const items = list.map((h) => {
+    const x = extInfo(h);
+    return [`${spokenName(h.name, h.symbol)}: oggi ${sEurSay(h.dayEur)}, ${pctSay(h.dayPct)}.${x ? ` ${x.label} ${pctSay(x.changePct)}.` : ''}${h.eval ? ` Valutazione: ${h.eval.action}.` : ''}`];
+  });
+  return [intro, ...items, ['Fine del riepilogo.']];
+}
 function speakById(id) {
+  if (id === 'brief') return speak(briefText(), id);
   if (id === 'advice-all') return speak(adviceAllText(), id);
-  if (id === 'watch-all') return speak(watchText(), id);
-  if (id.startsWith('adv:')) { const h = S.holdings[id.slice(4)]; if (h) return speak(adviceItemText(h), id); }
+  if (id === 'watch-all') return speak(watchText().map((t) => [t]), id);
+  if (id.startsWith('adv:')) { const h = S.holdings[id.slice(4)]; if (h) return speak([adviceItemText(h)], id); }
 }
 onSpeechChange(() => {
+  renderCarSpeech();
   $$('[data-speak]').forEach((b) => {
-    const on = isSpeaking(b.dataset.speak);
+    const on = isActive(b.dataset.speak);
     b.classList.toggle('on', on);
     const label = b.title || 'Ascolta';
     b.innerHTML = `${on ? STOPICON : SPEAKER}<span>${on ? 'Stop' : label}</span>`;
   });
 });
 
+/* ---------- modalità auto ---------- */
+const CAR_LABEL = { brief: 'Riepilogo', 'advice-all': 'Valutazioni', 'watch-all': 'Suggeriti' };
+function openCar() {
+  $('#car').hidden = false;
+  document.body.classList.add('car-mode');
+  enableMediaControls('Portafoglio');
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  renderCar(); renderCarSpeech();
+}
+function closeCar() {
+  stopSpeaking();
+  $('#car').hidden = true;
+  document.body.classList.remove('car-mode');
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  if (params.get('view') === 'auto') history.replaceState(null, '', '/');
+}
+function renderCar() {
+  if ($('#car')?.hidden !== false) return;
+  const T = totals();
+  $('#carDay').innerHTML = `<span class="${cls(T.day)}">${sEur(T.day)}</span> <small class="${cls(T.dayPct)}">${pct(T.dayPct)}</small>`;
+  $('#carTotal').textContent = `Valore ${eur(T.value)}`;
+}
+function renderCarSpeech() {
+  if (!$('#car') || $('#car').hidden) return;
+  const st = speechState();
+  const active = st.id && CAR_LABEL[st.id];
+  $('#carNow').textContent = active ? st.text : 'Tocca il pulsante grande per ascoltare il riepilogo';
+  $('#carWhat').textContent = active ? `${CAR_LABEL[st.id]}${st.paused ? ' · in pausa' : ''}` : '';
+  $('#carBar').style.width = active && st.total ? `${((st.pos + 1) / st.total) * 100}%` : '0';
+  $('#carMain').innerHTML = !active ? '▶<span>Ascolta riepilogo</span>' : st.paused ? '▶<span>Riprendi</span>' : '❚❚<span>Pausa</span>';
+  $('#carMain').classList.toggle('playing', !!active && !st.paused);
+  $$('#car [data-car]').forEach((b) => b.classList.toggle('on', st.id === b.dataset.car));
+  ['#carPrev', '#carNext', '#carStop'].forEach((x) => ($(x).disabled = !active));
+}
+
 /* ---------- rendering ---------- */
 function renderHeader() {
+  renderCar();
   const T = totals();
   $('#hdrTotal').textContent = eur(T.value);
   $('#hdrDay').innerHTML = `<span class="${cls(T.day)}">${sEur(T.day)} (${pct(T.dayPct)})</span> oggi`;
@@ -696,6 +747,7 @@ async function startApp() {
   } else $('#app').hidden = false;
   $('#menuWho').textContent = S.mode === 'local' ? 'Modalità locale: i dati restano solo su questo dispositivo.' : `Accesso come ${S.user.email}`;
   $('#importLocalBtn').hidden = !(S.mode === 'cloud' && local.get('pf_tx').length);
+  if (params.get('view') === 'auto' && speechSupported) openCar();
   try { await loadData(); } catch (e) { toast(`Errore dati: ${e.message}`, 5000); }
   setInterval(() => document.visibilityState === 'visible' && refresh({ quiet: true }), REFRESH_MS);
   setInterval(liveTick, LIVE_MS);
@@ -804,6 +856,16 @@ function bind() {
     rs.addEventListener('change', () => localStorage.setItem('pf_rate', rs.value));
   } else $('#rateRow').hidden = true;
   window.addEventListener('pagehide', stopSpeaking);
+  if (speechSupported) {
+    $('#carBtn').hidden = false;
+    $('#carBtn').addEventListener('click', openCar);
+    $('#carExit').addEventListener('click', closeCar);
+    $('#carMain').addEventListener('click', () => { const st = speechState(); st.id && CAR_LABEL[st.id] ? togglePause() : speakById('brief'); });
+    $('#carPrev').addEventListener('click', prevSection);
+    $('#carNext').addEventListener('click', nextSection);
+    $('#carStop').addEventListener('click', stopSpeaking);
+    $$('#car [data-car]').forEach((b) => b.addEventListener('click', () => { const st = speechState(); if (st.id === b.dataset.car) togglePause(); else speakById(b.dataset.car); }));
+  }
   $('#runAnalysisBtn').addEventListener('click', () => { $('#menuDlg').close(); runAnalysisNow(); });
   $('#exportBtn').addEventListener('click', () => {
     const rows = [['data', 'operazione', 'simbolo', 'nome', 'quantita', 'prezzo', 'valuta', 'commissioni', 'nota']]

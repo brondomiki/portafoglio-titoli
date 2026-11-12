@@ -18,6 +18,12 @@
   ],
   "shortcuts": [
     {
+      "name": "Modalità auto",
+      "short_name": "Auto",
+      "url": "/?view=auto",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
       "name": "Widget compatto",
       "short_name": "Widget",
       "url": "/?view=mini",
