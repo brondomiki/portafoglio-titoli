@@ -12,6 +12,9 @@ let current = null;   // id della lettura in corso
 let isPaused = false; // in pausa (dall'utente o per blocco del telefono)
 let wakeLock = null;
 let gen = 0;          // invalida i callback delle letture annullate
+let live = [];        // riferimenti alle frasi in coda (senza, Chrome può perdere gli eventi di fine)
+let watchdog = null;  // controlla che la voce stia davvero parlando
+let idleSince = 0, retries = 0, doneIdx = -1, startedIdx = -1; // ultima frase completata / iniziata
 const listeners = new Set();
 export const onSpeechChange = (fn) => listeners.add(fn);
 const emit = () => { listeners.forEach((fn) => fn(state())); updateMediaSession(); };
@@ -77,6 +80,13 @@ function silentAudio() {
 }
 let mediaEnabled = false;
 let mediaTitle = 'Portafoglio';
+// l'audio muto (necessario per i tasti del volante) su alcuni telefoni zittisce la voce: solo su richiesta
+export const wheelKeysEnabled = () => { try { return localStorage.getItem('pf_wheel') === '1'; } catch { return false; } };
+export function setWheelKeys(on) {
+  try { localStorage.setItem('pf_wheel', on ? '1' : '0'); } catch {}
+  if (!on && silent) silent.pause();
+  updateMediaSession();
+}
 export function enableMediaControls(title = 'Portafoglio') {
   mediaEnabled = true; mediaTitle = title;
   if (!('mediaSession' in navigator)) return;
@@ -92,9 +102,11 @@ export function enableMediaControls(title = 'Portafoglio') {
 }
 function updateMediaSession() {
   if (!mediaEnabled) return;
-  const a = silentAudio();
-  if (current && !isPaused) a.play().catch(() => {});
-  else if (!current) a.pause();
+  if (wheelKeysEnabled()) {
+    const a = silentAudio();
+    if (current && !isPaused) { if (a.paused) a.play().catch(() => {}); }
+    else a.pause();
+  } else if (silent && !silent.paused) silent.pause();
   if ('mediaSession' in navigator) {
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -111,25 +123,54 @@ function updateMediaSession() {
 // --- lettura ---
 function playFrom(from) {
   const g = ++gen;
-  synth.cancel();
-  const rate = +(localStorage.getItem('pf_rate') || 1.05);
   pos = Math.max(0, Math.min(from, queue.length - 1));
   isPaused = false;
+  idleSince = 0;
   keepAwake();
+  startWatchdog();
   emit();
-  for (let i = pos; i < queue.length; i++) {
+  const busy = synth.speaking || synth.pending;
+  if (busy) {
+    synth.cancel();
+    // Chrome su Android ignora le frasi accodate subito dopo un annullamento: breve attesa
+    setTimeout(() => { if (g === gen) enqueue(g, pos); }, 150);
+  } else enqueue(g, pos); // subito, dentro il tocco dell'utente (necessario su iPhone)
+}
+function enqueue(g, from) {
+  try { synth.resume(); } catch {}
+  const rate = +(localStorage.getItem('pf_rate') || 1.05);
+  live = [];
+  for (let i = from; i < queue.length; i++) {
     const u = new SpeechSynthesisUtterance(queue[i].text);
     u.lang = 'it-IT';
     if (voice) u.voice = voice;
     u.rate = rate;
-    u.onstart = () => { if (g === gen) { pos = i; emit(); } };
-    if (i === queue.length - 1) u.onend = () => { if (g === gen) finish(); };
+    u.onstart = () => { if (g === gen) { pos = i; startedIdx = Math.max(startedIdx, i); emit(); } };
+    u.onend = () => { if (g !== gen) return; doneIdx = Math.max(doneIdx, i); retries = 0; if (i === queue.length - 1) finish(); };
     u.onerror = (e) => { if (g === gen && e.error !== 'interrupted' && e.error !== 'canceled') finish(); };
+    live.push(u);
     synth.speak(u);
   }
 }
+
+// se il sistema interrompe la voce senza avvisare, riprende dalla frase corrente; se non riesce, si ferma
+function startWatchdog() {
+  if (watchdog) return;
+  watchdog = setInterval(() => {
+    if (!current) { clearInterval(watchdog); watchdog = null; return; }
+    if (isPaused || document.visibilityState === 'hidden') { idleSince = 0; return; }
+    if (synth.speaking || synth.pending) { idleSince = 0; return; }
+    if (!idleSince) { idleSince = Date.now(); return; }
+    if (Date.now() - idleSince < 2000) return;
+    idleSince = 0;
+    if (doneIdx >= queue.length - 1 || startedIdx >= queue.length - 1) return finish(); // conclusa, evento di fine perso
+    if (++retries > 2) return finish();                 // la voce non riparte: libera i pulsanti
+    playFrom(Math.max(pos, doneIdx + 1));               // riprende dalla prima frase non completata
+  }, 700);
+}
 function finish() {
   gen++;
+  live = []; retries = 0; idleSince = 0; doneIdx = -1; startedIdx = -1;
   current = null; queue = []; pos = 0; isPaused = false;
   releaseAwake();
   emit();
@@ -142,6 +183,7 @@ export function speak(parts, id, { toggle = true } = {}) {
   current = id;
   queue = parts.flatMap((p, part) => [].concat(p).flatMap((t) => sayable(t).split(/(?<=[.!?])\s+/)).filter(Boolean).map((text) => ({ text, part })));
   if (!queue.length) { finish(); return false; }
+  startedIdx = doneIdx = -1;
   playFrom(0);
   return true;
 }
@@ -164,6 +206,7 @@ export function nextSection() {
   const part = queue[pos]?.part ?? 0;
   const i = queue.findIndex((q) => q.part > part);
   if (i === -1) return stopSpeaking();
+  startedIdx = doneIdx = i - 1;
   playFrom(i);
 }
 export function prevSection() {
@@ -171,8 +214,9 @@ export function prevSection() {
   const part = queue[pos]?.part ?? 0;
   const start = queue.findIndex((q) => q.part === part);
   // se si è appena iniziata la sezione, torna a quella precedente
-  if (pos - start < 1 && part > 0) playFrom(queue.findIndex((q) => q.part === part - 1));
-  else playFrom(start);
+  const to = pos - start < 1 && part > 0 ? queue.findIndex((q) => q.part === part - 1) : start;
+  startedIdx = doneIdx = to - 1;
+  playFrom(to);
 }
 
 // telefono bloccato a mano o app in secondo piano: pausa, poi ripresa dalla stessa frase

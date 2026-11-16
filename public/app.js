@@ -1,5 +1,5 @@
 import { drawChart, sparkline } from './chart.js';
-import { speak, stopSpeaking, speechSupported, onSpeechChange, isActive, state as speechState, togglePause, nextSection, prevSection, enableMediaControls } from './speech.js';
+import { speak, stopSpeaking, speechSupported, onSpeechChange, isActive, state as speechState, togglePause, nextSection, prevSection, enableMediaControls, wheelKeysEnabled, setWheelKeys } from './speech.js';
 import { indicators, evaluatePosition, entryPlan, livePlan, UNIVERSE } from './analysis.js';
 
 const REFRESH_MS = 5 * 60 * 1000; // storico completo e suggerimenti
@@ -867,6 +867,9 @@ function bind() {
     $('#carPrev').addEventListener('click', prevSection);
     $('#carNext').addEventListener('click', nextSection);
     $('#carStop').addEventListener('click', stopSpeaking);
+    const wheelLabel = () => ($('#carWheel').innerHTML = `Tasti volante: <b>${wheelKeysEnabled() ? 'Sì' : 'No'}</b>`);
+    wheelLabel();
+    $('#carWheel').addEventListener('click', () => { setWheelKeys(!wheelKeysEnabled()); wheelLabel(); });
     $$('#car [data-car]').forEach((b) => b.addEventListener('click', () => { const st = speechState(); if (st.id === b.dataset.car) togglePause(); else speakById(b.dataset.car); }));
   }
   $('#runAnalysisBtn').addEventListener('click', () => { $('#menuDlg').close(); runAnalysisNow(); });
