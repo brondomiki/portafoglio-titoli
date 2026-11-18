@@ -115,19 +115,28 @@ h3 { margin: 0 0 12px; font-size: 17px; }
 /* liste */
 .list { display: grid; gap: 2px; }
 .empty { color: var(--muted); text-align: center; padding: 22px 8px; }
-.hold { display: grid; grid-template-columns: 1fr 76px auto; gap: 10px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--line); }
-.hold:first-child { border-top: 0; }
-.hold .sym { font-weight: 700; }
-.hold .nm { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hold .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.hold canvas { width: 76px; height: 32px; }
-.hold .right { text-align: right; font-variant-numeric: tabular-nums; }
-.hold .right b { display: block; }
-.hold .right .day-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.hold .right .day-big { font-size: 18px; font-weight: 800; line-height: 1.15; }
-.hold .right .day-pct { display: block; font-size: 13px; font-weight: 700; }
-.hold .right .tot-line { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
-.hold .ops { display: flex; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+.hold { display: grid; gap: 10px; padding: 14px 4px; border-top: 1px solid var(--line); }
+.hold:first-child { border-top: 0; padding-top: 4px; }
+.h-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.h-id { min-width: 0; flex: 1; }
+.h-symrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hold .sym { font-weight: 800; font-size: 17px; letter-spacing: .01em; }
+.hold .nm { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.h-today { text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.h-today .day-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.h-today .day-big { display: block; font-size: 22px; font-weight: 800; line-height: 1.15; }
+.h-today .day-pct { display: block; font-size: 14px; font-weight: 700; }
+.h-spark { width: 100%; height: 40px; display: block; }
+.h-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.h-stats > div { background: var(--bg); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.h-stats span { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h-stats b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h-stats small { display: block; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hold .ext { font-size: 13px; background: var(--bg); border-radius: 10px; padding: 7px 10px; }
+.hold .ops { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hold .ops .mini-btn { font-size: 15px; font-weight: 700; padding: 10px; border-radius: 10px; }
+@media (min-width: 861px) { .h-stats { grid-template-columns: repeat(2, 1fr); } .hold .ops { display: flex; justify-content: flex-end; } .hold .ops .mini-btn { font-size: 13px; padding: 5px 14px; } }
+@media (max-width: 640px) { .h-stats { grid-template-columns: repeat(2, 1fr); } }
 .mini-btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 7px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
 .mini-btn.buy { color: var(--pos); }
 .mini-btn.sell { color: var(--neg); }

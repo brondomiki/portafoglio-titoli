@@ -411,21 +411,28 @@ function renderHoldings() {
     const pl = h.valueEur != null ? h.valueEur - h.costEur : null;
     const plp = h.costEur ? (h.valueEur / h.costEur - 1) * 100 : null;
     const adv = h.eval;
+    const x = extInfo(h);
     return `<div class="hold">
-      <div style="min-width:0">
-        <div class="sym">${esc(h.symbol)} ${adv ? `<span class="badge ${adv.tone}">${esc(adv.action)}</span>` : ''}</div>
-        <div class="nm">${esc(h.name)}</div>
-        <div class="meta">${num(h.qty)} × ${price(h.avg, h.currency)} · ora ${price(h.price, h.currency)}</div>
-        ${(() => { const x = extInfo(h); return x ? `<div class="ext" title="Ultimo scambio ${x.label.toLowerCase()} alle ${extTime(x.time)}"><span class="ext-tag ${x.type}">${x.label}</span> <b>${price(x.price, h.currency)}</b> <span class="${cls(x.changePct)}">${pct(x.changePct)}</span>${x.eurImpact != null ? ` <span class="${cls(x.eurImpact)}">(${sEur(x.eurImpact)})</span>` : ''} <span class="muted">${extTime(x.time)}</span></div>` : ''; })()}
+      <div class="h-top">
+        <div class="h-id">
+          <div class="h-symrow"><span class="sym">${esc(h.symbol)}</span>${adv ? ` <span class="badge ${adv.tone}">${esc(adv.action)}</span>` : ''}</div>
+          <div class="nm">${esc(h.name)}</div>
+        </div>
+        <div class="h-today">
+          <span class="day-label">Oggi</span>
+          <b class="day-big ${cls(h.dayEur)}">${sEur(h.dayEur)}</b>
+          <span class="day-pct ${cls(h.dayPct)}">${pct(h.dayPct)}</span>
+        </div>
       </div>
-      <canvas data-spark="${esc(h.symbol)}"></canvas>
-      <div class="right">
-        <span class="day-label">Oggi</span>
-        <b class="day-big ${cls(h.dayEur)}">${sEur(h.dayEur)}</b>
-        <span class="day-pct ${cls(h.dayPct)}">${pct(h.dayPct)}</span>
-        <div class="tot-line">Valore ${eur(h.valueEur)}<br>Totale <span class="${cls(pl)}">${sEur(pl)} (${pct(plp)})</span></div>
-        <div class="ops"><button class="mini-btn buy" data-trade="buy" data-sym="${esc(h.symbol)}">Compra</button><button class="mini-btn sell" data-trade="sell" data-sym="${esc(h.symbol)}">Vendi</button></div>
+      <canvas class="h-spark" data-spark="${esc(h.symbol)}"></canvas>
+      <div class="h-stats">
+        <div><span>Valore</span><b>${eur(h.valueEur)}</b></div>
+        <div><span>Guadagno totale</span><b class="${cls(pl)}">${sEur(pl)}</b><small class="${cls(plp)}">${pct(plp)}</small></div>
+        <div><span>Prezzo ora</span><b>${price(h.price, h.currency)}</b></div>
+        <div><span>Quantità × prezzo medio</span><b>${num(h.qty)} × ${price(h.avg, h.currency)}</b></div>
       </div>
+      ${x ? `<div class="ext" title="Ultimo scambio ${x.label.toLowerCase()} alle ${extTime(x.time)}"><span class="ext-tag ${x.type}">${x.label}</span> <b>${price(x.price, h.currency)}</b> <span class="${cls(x.changePct)}">${pct(x.changePct)}</span>${x.eurImpact != null ? ` <span class="${cls(x.eurImpact)}">(${sEur(x.eurImpact)})</span>` : ''} <span class="muted">ore ${extTime(x.time)}</span></div>` : ''}
+      <div class="ops"><button class="mini-btn buy" data-trade="buy" data-sym="${esc(h.symbol)}">Compra</button><button class="mini-btn sell" data-trade="sell" data-sym="${esc(h.symbol)}">Vendi</button></div>
     </div>`;
   }).join('');
   $$('canvas[data-spark]', el).forEach((c) => {
