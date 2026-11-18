@@ -219,6 +219,22 @@
     </form>
   </dialog>
 
+  <!-- ANDROID AUTO -->
+  <dialog id="carLinkDlg">
+    <form method="dialog">
+      <h3>Collega Android Auto</h3>
+      <ol class="steps">
+        <li><a class="btn primary" id="apkLink" href="https://github.com/brondomiki/portafoglio-titoli/releases/latest/download/portafoglio-auto.apk">Scarica l'app (APK)</a> e installala sul telefono.</li>
+        <li>Da questo telefono premi <a class="btn" id="carDeepLink" href="#">Collega l'app</a>: si apre l'app già configurata.</li>
+        <li>Su un altro dispositivo? Nell'app inserisci a mano indirizzo e codice:</li>
+      </ol>
+      <label>Indirizzo<input id="carUrl" readonly></label>
+      <label>Codice di collegamento<input id="carToken" readonly></label>
+      <p class="hint">Il codice dà accesso in sola lettura ai tuoi titoli: non condividerlo. Generandone uno nuovo, quello vecchio smette di funzionare.</p>
+      <div class="dlg-actions"><button class="btn" type="button" id="carCopy">Copia codice</button><button class="btn" value="close">Chiudi</button></div>
+    </form>
+  </dialog>
+
   <!-- ACCOUNT -->
   <dialog id="menuDlg">
     <form method="dialog">
@@ -229,6 +245,7 @@
         <label id="rateRow" class="rate-row">Velocità della voce
           <select id="rateSel"><option value="0.85">Lenta</option><option value="1.05">Normale</option><option value="1.25">Veloce</option><option value="1.45">Molto veloce</option></select>
         </label>
+        <button class="btn" type="button" id="carLinkBtn">Collega Android Auto</button>
         <button class="btn" type="button" id="runAnalysisBtn">Aggiorna analisi adesso</button>
         <button class="btn" type="button" id="exportBtn">Esporta movimenti (CSV)</button>
         <button class="btn" type="button" id="importLocalBtn" hidden>Importa dati locali nell'account</button>

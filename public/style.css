@@ -300,3 +300,6 @@ body.car-mode { overflow: hidden; }
   body.has-fab .toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
   body.car-mode .car-fab { display: none !important; }
 }
+
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 10px; font-size: 14px; }
+.steps .btn { display: inline-block; margin: 2px 0; }

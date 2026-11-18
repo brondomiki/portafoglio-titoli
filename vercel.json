@@ -14,12 +14,16 @@
   ],
   "functions": {
     "api/cron-analysis.js": {
-      "includeFiles": "public/analysis.js",
+      "includeFiles": "public/{analysis,speech}.js",
       "maxDuration": 60
     },
     "api/analysis.js": {
-      "includeFiles": "public/analysis.js",
+      "includeFiles": "public/{analysis,speech}.js",
       "maxDuration": 60
+    },
+    "api/car.js": {
+      "includeFiles": "public/{analysis,speech}.js",
+      "maxDuration": 30
     }
   },
   "crons": [

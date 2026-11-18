@@ -36,6 +36,7 @@ if (speechSupported) {
 
 export function sayable(text) {
   return String(text)
+    .replace(/\d{1,3}(?:\.\d{3})+(?=,\d|\D|$)/g, (m) => m.replace(/\./g, '')) // separatore delle migliaia
     .replace(/(\d)\.(\d)/g, '$1,$2')
     .replace(/([+−-])\s?(\d[\d.,]*)\s?%/g, (_, s, n) => `${s === '+' ? 'più' : 'meno'} ${n} per cento`)
     .replace(/(\d[\d.,]*)\s?%/g, '$1 per cento')

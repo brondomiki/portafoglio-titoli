@@ -879,6 +879,19 @@ function bind() {
     $('#carWheel').addEventListener('click', () => { setWheelKeys(!wheelKeysEnabled()); wheelLabel(); });
     $$('#car [data-car]').forEach((b) => b.addEventListener('click', () => { const st = speechState(); if (st.id === b.dataset.car) togglePause(); else speakById(b.dataset.car); }));
   }
+  $('#carLinkBtn').addEventListener('click', async () => {
+    if (S.mode !== 'cloud') return toast("Serve l'accesso con account per collegare Android Auto");
+    $('#menuDlg').close();
+    const { data } = await S.db.auth.getSession();
+    const r = await fetch('/api/car', { method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token}` } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(j.error || 'Collegamento non riuscito', 6000);
+    $('#carUrl').value = location.origin;
+    $('#carToken').value = j.token;
+    $('#carDeepLink').href = `portafoglio-auto://setup?url=${encodeURIComponent(location.origin)}&t=${encodeURIComponent(j.token)}`;
+    $('#carLinkDlg').showModal();
+  });
+  $('#carCopy').addEventListener('click', () => navigator.clipboard?.writeText($('#carToken').value).then(() => toast('Codice copiato')));
   $('#runAnalysisBtn').addEventListener('click', () => { $('#menuDlg').close(); runAnalysisNow(); });
   $('#exportBtn').addEventListener('click', () => {
     const rows = [['data', 'operazione', 'simbolo', 'nome', 'quantita', 'prezzo', 'valuta', 'commissioni', 'nota']]
