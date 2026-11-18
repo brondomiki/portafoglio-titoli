@@ -29,6 +29,13 @@ App web installabile (PWA) per seguire i propri titoli: grafico verde/rosso, acq
 Valutazioni e titoli suggeriti vengono ricalcolati da Vercel Cron nei giorni di borsa verso le **8:30** e le **15:00** (ora italiana, orario invernale; in estate un'ora più tardi) e salvati in `analysis_runs`.
 Serve una variabile in più su Vercel: `SUPABASE_SERVICE_ROLE_KEY` = chiave **service_role** (o *secret*) da Supabase → Project Settings → API. Dal menu account dell'app c'è anche **Aggiorna analisi adesso**.
 
+## App Android Auto
+Cartella `android/`: app audio (Media3) che mostra i titoli sullo schermo dell'auto e legge le valutazioni.
+GitHub Actions la compila a ogni modifica e pubblica l'APK su **Releases**:
+`https://github.com/brondomiki/portafoglio-titoli/releases/latest/download/portafoglio-auto.apk`.
+Collegamento: web app → menu account → *Collega Android Auto* (crea un codice in `car_tokens`, letto da `/api/car`).
+In Android Auto vanno attivate le impostazioni sviluppatore → *Fonti sconosciute* (istruzioni nell'app).
+
 ## Installazione su ogni dispositivo
 
 | Dispositivo | Come |
